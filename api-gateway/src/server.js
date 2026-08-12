@@ -20,7 +20,7 @@ app.use("/api/users", async (req, res) => {
   try {
     const response = await axios({
       method: req.method,
-      url: `http://localhost:5001${req.originalUrl}`,
+      url: `${process.env.USER_SERVICE_URL}${req.originalUrl}`,
       data: req.body,
       headers: {
         "Content-Type": "application/json",
