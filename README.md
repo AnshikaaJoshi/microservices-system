@@ -1,8 +1,19 @@
 # Microservices System
 
-A backend microservices system built using **Node.js, Express.js, MongoDB, NATS, and Docker**.
+A backend **microservices-based system** built using **Node.js, Express.js, MongoDB, NATS JetStream, and Docker**.
 
-The project demonstrates a microservices architecture where services communicate through an **API Gateway** and use **NATS for event-driven communication**.
+The system demonstrates:
+
+* Microservices architecture
+* API Gateway pattern
+* Secure inter-service messaging
+* Asynchronous event-driven communication
+* Reliable message delivery using NATS JetStream
+* JWT-based authentication
+* Password hashing
+* Dockerized services
+* Environment-based configuration
+* Clean separation of responsibilities
 
 ---
 
@@ -12,89 +23,171 @@ The project demonstrates a microservices architecture where services communicate
                          Client
                            |
                            v
-                    API Gateway :5000
+                  API Gateway :5000
                            |
+                           | HTTP
                            v
-                    User Service :5001
-                       /        \
-                      /          \
-                     v            v
-                MongoDB          NATS
-                                  |
-                                  v
-                       Notification Service
+                  User Service :5001
+                     /           \
+                    /             \
+                   v               v
+              MongoDB          NATS JetStream
+                                    |
+                                    | user.created
+                                    v
+                         Notification Service
+```
+
+### Communication Model
+
+The **API Gateway → User Service** communication uses HTTP.
+
+The **User Service → Notification Service** communication does **NOT** use REST APIs or WebSockets.
+
+Instead, services communicate asynchronously through **NATS JetStream**.
+
+```text
+Client
+  |
+  | HTTP
+  v
+API Gateway
+  |
+  | HTTP
+  v
+User Service
+  |
+  | Publish: user.created
+  v
+NATS JetStream
+  |
+  | Subscribe / Consume
+  v
+Notification Service
+```
+
+This keeps the User Service and Notification Service loosely coupled.
+
+---
+
+# Services
+
+## 1. API Gateway
+
+Runs on port `5000`.
+
+Responsibilities:
+
+* Acts as the single entry point for clients
+* Routes user-related HTTP requests to the User Service
+* Keeps internal service communication hidden from clients
+* Uses Axios for HTTP communication with the User Service
+
+---
+
+## 2. User Service
+
+Runs on port `5001`.
+
+Responsibilities:
+
+* Create users
+* Retrieve users
+* Validate request data
+* Prevent duplicate email addresses
+* Hash passwords using `bcryptjs`
+* Authenticate users using JWT
+* Store users in MongoDB
+* Publish `user.created` events through NATS JetStream
+
+---
+
+## 3. Notification Service
+
+The Notification Service processes asynchronous events from NATS JetStream.
+
+Responsibilities:
+
+* Connect securely to NATS
+* Access the `USERS` JetStream stream
+* Consume `user.created` events
+* Process notification events
+* Acknowledge successfully processed messages
+
+Example log:
+
+```text
+📩 User created event received:
+{
+  id: "...",
+  name: "Final Test User",
+  email: "finaltest20260813_01@example.com"
+}
+
+✅ Message acknowledged
 ```
 
 ---
 
-## Services
+## 4. MongoDB
 
-### 1. API Gateway
+MongoDB is used as the persistent database for the User Service.
 
-- Runs on port `5000`
-- Acts as the entry point for client requests
-- Forwards user-related requests to the User Service
-- Uses Axios for service-to-service HTTP communication
+The database runs inside Docker and uses a persistent Docker volume:
 
-### 2. User Service
-
-- Runs on port `5001`
-- Creates users
-- Retrieves users
-- Validates user data
-- Checks for duplicate email addresses
-- Hashes passwords using `bcryptjs`
-- Stores users in MongoDB
-- Publishes `user.created` events to NATS
-
-### 3. Notification Service
-
-- Connects to NATS
-- Subscribes to user-related events
-- Receives `user.created` events
-- Processes notification events
-
-### 4. MongoDB
-
-- Stores User Service data
-- Runs as a Docker container
-- Uses a persistent Docker volume
-
-### 5. NATS
-
-- Acts as the message broker
-- Enables asynchronous event-driven communication
-- Used for communication between User Service and Notification Service
+```text
+mongodb_data
+```
 
 ---
 
-## Technologies Used
+## 5. NATS JetStream
 
-- Node.js
-- Express.js
-- MongoDB
-- Mongoose
-- NATS
-- bcryptjs
-- Axios
-- JavaScript
-- REST API
-- Docker
-- Docker Compose
-- Git
-- GitHub
+NATS is used as the message broker between the User Service and Notification Service.
+
+JetStream provides reliable event delivery and message persistence.
+
+The system uses:
+
+```text
+Stream: USERS
+Subject: user.created
+```
+
+The Notification Service acknowledges successfully processed messages.
+
+This provides a foundation for reliable asynchronous communication.
 
 ---
 
-## API Endpoints
+# Technologies Used
 
-### Health Check
+* Node.js
+* Express.js
+* MongoDB
+* Mongoose
+* NATS
+* NATS JetStream
+* bcryptjs
+* JSON Web Token (JWT)
+* Axios
+* JavaScript
+* Docker
+* Docker Compose
+* Git
+* GitHub
+
+---
+
+# API Documentation
+
+## API Gateway Health Check
 
 ```http
 GET /
 ```
 
-API Gateway:
+URL:
 
 ```text
 http://localhost:5000/
@@ -110,7 +203,7 @@ Expected response:
 
 ---
 
-### Get All Users
+## Get All Users
 
 ```http
 GET /api/users
@@ -124,7 +217,7 @@ http://localhost:5000/api/users
 
 ---
 
-### Create User
+## Create User
 
 ```http
 POST /api/users
@@ -146,19 +239,57 @@ Request body:
 }
 ```
 
-The password is hashed before being stored in MongoDB.
+The password is hashed using `bcryptjs` before being stored in MongoDB.
 
 ---
 
-## NATS Event
+## User Login
 
-When a new user is successfully created, the User Service publishes:
+```http
+POST /api/users/login
+```
+
+URL:
+
+```text
+http://localhost:5000/api/users/login
+```
+
+Request body:
+
+```json
+{
+  "email": "anshika@example.com",
+  "password": "Test@123456"
+}
+```
+
+Successful response contains a JWT:
+
+```json
+{
+  "token": "<JWT_TOKEN>",
+  "user": {
+    "id": "<user-id>",
+    "name": "Anshika",
+    "email": "anshika@example.com"
+  }
+}
+```
+
+The JWT is signed using a secret stored in an environment variable.
+
+---
+
+# NATS Event
+
+When a user is successfully created, the User Service publishes:
 
 ```text
 user.created
 ```
 
-Example event payload:
+Example payload:
 
 ```json
 {
@@ -168,20 +299,24 @@ Example event payload:
 }
 ```
 
-The Notification Service subscribes to the `user.created` event.
+The event is published to NATS JetStream.
+
+The Notification Service consumes the event and acknowledges it after successful processing.
 
 ---
 
-## Communication Flow
+# Communication Flow
 
-### Synchronous Communication
+## Synchronous Communication
 
 ```text
 Client
    |
+   | HTTP
    v
 API Gateway
    |
+   | HTTP
    v
 User Service
    |
@@ -189,22 +324,114 @@ User Service
 MongoDB
 ```
 
-### Event-Driven Communication
+## Asynchronous Communication
 
 ```text
 User Service
      |
      | user.created
      v
-    NATS
+NATS JetStream
      |
+     | consume + acknowledge
      v
 Notification Service
 ```
 
-This architecture keeps the User Service and Notification Service **loosely coupled**.
+The User Service does not directly call the Notification Service.
 
-The User Service does not need to directly call the Notification Service.
+Therefore, the two services remain loosely coupled.
+
+---
+
+# Security
+
+The system implements multiple security measures.
+
+### Password Security
+
+Passwords are hashed using:
+
+```text
+bcryptjs
+```
+
+Plain-text passwords are not stored in MongoDB.
+
+### JWT Authentication
+
+User login generates a signed JWT.
+
+The JWT secret and expiration configuration are stored in environment variables.
+
+Example:
+
+```env
+JWT_SECRET=your_secret_here
+JWT_EXPIRES_IN=1h
+```
+
+Actual secrets must never be committed to GitHub.
+
+### Secure NATS Authentication
+
+NATS uses username/password authentication.
+
+Credentials are provided through environment variables rather than being hardcoded in application code.
+
+Example:
+
+```env
+NATS_USER=microservice
+NATS_PASSWORD=your_nats_password_here
+```
+
+### Environment Variables
+
+Sensitive configuration is kept outside the source code.
+
+The `.env` file is excluded through `.gitignore`.
+
+A safe template is provided as:
+
+```text
+.env.example
+```
+
+---
+
+# Reliability
+
+NATS JetStream is used instead of basic fire-and-forget messaging.
+
+The Notification Service:
+
+1. Connects to NATS
+2. Accesses the `USERS` stream
+3. Creates/finds its consumer
+4. Receives `user.created` events
+5. Processes the event
+6. Acknowledges the message
+
+Example:
+
+```text
+User Service
+     |
+     v
+NATS JetStream
+     |
+     v
+Notification Consumer
+     |
+     v
+Message Processing
+     |
+     v
+ACK
+```
+
+This provides reliable asynchronous event processing.
 
 ---
 
@@ -214,51 +441,55 @@ The complete application can be run using Docker Compose.
 
 Docker Compose manages:
 
-- API Gateway
-- User Service
-- Notification Service
-- MongoDB
-- NATS
+* API Gateway
+* User Service
+* Notification Service
+* MongoDB
+* NATS JetStream
 
 ## Docker Services
 
-| Service | Port | Purpose |
-|---|---:|---|
-| API Gateway | 5000 | Client entry point |
-| User Service | 5001 | User management |
-| MongoDB | 27017 | Database |
-| NATS | 4222 | Message broker |
-| NATS Monitoring | 8222 | NATS monitoring |
-| Notification Service | Internal | Event processing |
+| Service              |     Port | Purpose            |
+| -------------------- | -------: | ------------------ |
+| API Gateway          |     5000 | Client entry point |
+| User Service         |     5001 | User management    |
+| MongoDB              |    27017 | Database           |
+| NATS                 |     4222 | Message broker     |
+| NATS Monitoring      |     8222 | NATS monitoring    |
+| Notification Service | Internal | Event processing   |
 
 ---
 
-## Environment Variables
+# Environment Variables
 
-### User Service
+## User Service
 
 ```env
 PORT=5001
 MONGODB_URI=mongodb://mongodb:27017/microservices
 NATS_URL=nats://nats:4222
+NATS_USER=microservice
+NATS_PASSWORD=your_nats_password_here
+JWT_SECRET=your_jwt_secret_here
+JWT_EXPIRES_IN=1h
 ```
 
-### Notification Service
+## Notification Service
 
 ```env
 NATS_URL=nats://nats:4222
+NATS_USER=microservice
+NATS_PASSWORD=your_nats_password_here
 ```
 
-### API Gateway
+## API Gateway
 
 ```env
 PORT=5000
 USER_SERVICE_URL=http://user-service:5001
 ```
 
-> When running the services directly on the host instead of Docker, `localhost` can be used for MongoDB and NATS where appropriate.
-
-**Never commit `.env` files or secret credentials to GitHub.**
+> These values are examples only. Never commit actual passwords, JWT secrets, or other credentials to GitHub.
 
 ---
 
@@ -266,40 +497,52 @@ USER_SERVICE_URL=http://user-service:5001
 
 ## Prerequisites
 
-Make sure the following are installed:
+Install:
 
-- Docker Desktop
-- Git
+* Docker Desktop
+* Git
 
 ---
 
-## Run with Docker Compose
-
-Clone the repository:
+## Clone Repository
 
 ```bash
-git clone https://github.com/AnshikaaJoshi/microservices-system
+git clone https://github.com/AnshikaaJoshi/microservices-system.git
 ```
 
-Navigate to the project directory:
+Navigate to the project:
 
 ```bash
 cd microservices-system
 ```
 
-Start all services:
+---
+
+## Environment Configuration
+
+Create a local `.env` file if required by the services.
+
+Use `.env.example` as a reference.
+
+Do not commit the actual `.env` file.
+
+---
+
+## Start Services
+
+Build and start the complete system:
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
-Check the running containers:
+Check running containers:
 
 ```bash
 docker compose ps
 ```
 
-All five services should be running:
+Expected services:
 
 ```text
 api-gateway
@@ -311,49 +554,55 @@ nats
 
 ---
 
-## View Logs
+# View Logs
 
-View logs for all services:
+View all logs:
 
 ```bash
 docker compose logs
 ```
 
-View User Service logs:
+User Service:
 
 ```bash
 docker compose logs user-service
 ```
 
-View Notification Service logs:
+Notification Service:
 
 ```bash
 docker compose logs notification-service
 ```
 
-View API Gateway logs:
+API Gateway:
 
 ```bash
 docker compose logs api-gateway
 ```
 
+NATS:
+
+```bash
+docker compose logs nats
+```
+
 ---
 
-## Stop the Application
+# Stop the Application
 
-To stop all containers:
+Stop and remove containers:
 
 ```bash
 docker compose down
 ```
 
-To stop containers without removing them:
+Stop containers without removing them:
 
 ```bash
 docker compose stop
 ```
 
-To start the existing containers again:
+Start existing containers:
 
 ```bash
 docker compose start
@@ -363,30 +612,35 @@ docker compose start
 
 # Testing
 
-The following functionality has been tested successfully:
+The following functionality has been tested:
 
-- User creation
-- Get all users
-- API Gateway routing
-- MongoDB connection
-- Duplicate email validation
-- Required field validation
-- Password hashing
-- NATS connection
-- `user.created` event publishing
-- Notification Service connection
-- Notification Service event subscription
-- Docker Compose configuration
-- MongoDB Docker container
-- NATS Docker container
-- User Service Docker container
-- Notification Service Docker container
-- API Gateway Docker container
-- End-to-end communication between services
+* User creation
+* Get all users
+* User login
+* JWT generation
+* Password hashing
+* Duplicate email validation
+* Required field validation
+* MongoDB connection
+* API Gateway routing
+* NATS authentication
+* NATS connection
+* NATS JetStream connection
+* `USERS` stream
+* `user.created` event publishing
+* Notification Service event consumption
+* Message acknowledgement
+* Docker Compose configuration
+* Dockerized MongoDB
+* Dockerized NATS
+* Dockerized User Service
+* Dockerized Notification Service
+* Dockerized API Gateway
+* End-to-end event communication
 
 ---
 
-# Example End-to-End Flow
+# End-to-End Flow
 
 When a client creates a new user:
 
@@ -401,7 +655,7 @@ When a client creates a new user:
    to User Service
              |
              v
-4. User Service validates user data
+4. User Service validates data
              |
              v
 5. Password is hashed using bcrypt
@@ -414,11 +668,15 @@ When a client creates a new user:
    "user.created" event
              |
              v
-8. NATS receives the event
+8. NATS JetStream stores the event
              |
              v
-9. Notification Service receives
+9. Notification Service consumes
    the event
+             |
+             v
+10. Notification Service processes
+    and acknowledges the message
 ```
 
 ---
@@ -463,43 +721,54 @@ microservices-system/
 ├── docs/
 │
 ├── docker-compose.yml
+├── nats-server.conf
+├── .env.example
 ├── .gitignore
 └── README.md
 ```
 
 ---
 
-# Security Considerations
+# Design Principles
 
-- Passwords are hashed using `bcryptjs`
-- Passwords are not returned in API responses
-- Duplicate email addresses are rejected
-- `.env` files are excluded from Git
-- Secret credentials should not be committed to GitHub
+The project follows these principles:
+
+* Separation of concerns
+* Loose coupling between services
+* Asynchronous event-driven communication
+* Secure inter-service communication
+* Environment-based configuration
+* Persistent data storage
+* Reliable event processing
+* Containerized deployment
+* Maintainable project structure
 
 ---
 
 # Future Improvements
 
-The following features can be added in future versions:
+Possible future improvements include:
 
-- JWT authentication
-- Role-based authorization
-- Email notifications
-- Swagger/OpenAPI documentation
-- Health-check endpoints
-- Centralized error handling
-- Message retry mechanism
-- Dead-letter queue
-- API Gateway service discovery
-- Rate limiting
-- Logging and monitoring
-- Automated tests
-- CI/CD pipeline
-- Kubernetes deployment
+* Role-based authorization
+* Email notification provider integration
+* Swagger/OpenAPI documentation
+* Centralized error handling
+* Dead-letter queue
+* Advanced retry policies
+* Rate limiting
+* Centralized logging
+* Distributed tracing
+* Automated integration tests
+* CI/CD pipeline
+* Kubernetes deployment
+* Service health monitoring
 
 ---
 
 # Author
 
 **Anshika Joshi**
+
+GitHub:
+
+https://github.com/AnshikaaJoshi
