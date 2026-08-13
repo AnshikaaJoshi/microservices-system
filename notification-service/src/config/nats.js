@@ -5,8 +5,10 @@ dotenv.config();
 
 const connectNats = async () => {
   const nc = await connect({
-    servers: process.env.NATS_URL,
-  });
+  servers: process.env.NATS_URL,
+  user: process.env.NATS_USER,
+  pass: process.env.NATS_PASSWORD,
+});
 
   console.log("NATS connected successfully");
 

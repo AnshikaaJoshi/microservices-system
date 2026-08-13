@@ -1,6 +1,7 @@
 import {
     getAllUsers,
-    createUser as createUserService
+    createUser as createUserService,
+    loginUser as loginUserService
 } from "../services/user.service.js";
 
 const getUsers = async (req, res) => {
@@ -28,8 +29,23 @@ const createUser = async (req, res) => {
         });
     }
 };
+const loginUser = async (req, res) => {
+    try {
+        const result = await loginUserService(
+            req.body.email,
+            req.body.password
+        );
+
+        res.status(200).json(result);
+    } catch (error) {
+        res.status(401).json({
+            message: error.message
+        });
+    }
+};
 
 export {
     getUsers,
-    createUser
+    createUser,
+    loginUser
 };
