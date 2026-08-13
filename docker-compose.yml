@@ -11,6 +11,9 @@ services:
     image: nats:2
     container_name: microservices-nats
     command: ["-c", "/etc/nats/nats-server.conf"]
+    environment:
+      NATS_USER: ${NATS_USER}
+      NATS_PASSWORD: ${NATS_PASSWORD}
     volumes:
       - ./nats-server.conf:/etc/nats/nats-server.conf:ro
       - nats_data:/data/jetstream
@@ -27,8 +30,8 @@ services:
       PORT: 5001
       MONGODB_URI: mongodb://mongodb:27017/microservices
       NATS_URL: nats://nats:4222
-      NATS_USER: microservice
-      NATS_PASSWORD: NatsSecure2026
+      NATS_USER: ${NATS_USER}
+      NATS_PASSWORD: ${NATS_PASSWORD}
     depends_on:
       - mongodb
       - nats
@@ -38,8 +41,8 @@ services:
     container_name: notification-service
     environment:
       NATS_URL: nats://nats:4222
-      NATS_USER: microservice
-      NATS_PASSWORD: NatsSecure2026
+      NATS_USER: ${NATS_USER}
+      NATS_PASSWORD: ${NATS_PASSWORD}
     depends_on:
       - nats
 
